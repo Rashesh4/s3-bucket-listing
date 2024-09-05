@@ -32,24 +32,38 @@ resource "aws_s3_object" "file2_in_dir2" {
   content_type = "text/plain"
 }
 
+resource "aws_key_pair" "demo_key_pair" {
+  key_name   = "demo-key-pair"
+  public_key = file("C:/Users/rashe/.ssh/id_rsa.pub")
+}
+
 resource "aws_instance" "demo_instance" {
   ami           = var.ami_id
   instance_type = "t2.micro"
-  key_name      = var.key_name
+  key_name = aws_key_pair.demo_key_pair.key_name
 
   vpc_security_group_ids = [aws_security_group.demo_sg.id]
 
   user_data = <<-EOF
-              #!/bin/bash
-              sudo apt-get update
-              sudo apt-get install -y python3-pip
-              git clone https://github.com/Rashesh4/s3-bucket-listing.git
-              cd s3-bucket-listing/app
-              pip3 install -r requirements.txt
-              echo "S3_BUCKET_NAME=${var.bucket_name}" >> .env
-              echo "AWS_DEFAULT_REGION=${var.aws_region}" >> .env
-              python3 app.py &
-              EOF
+            #!/bin/bash
+            exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+            echo "Starting user data script execution"
+            sudo apt-get update -y
+            echo "apt-get update completed"
+            sudo apt-get install -y python3-pip
+            echo "python3-pip installed"
+            git clone https://github.com/Rashesh4/s3-bucket-listing.git
+            echo "Repository cloned"
+            cd s3-bucket-listing/app
+            pip3 install -r requirements.txt
+            echo "Dependencies installed"
+            echo "S3_BUCKET_NAME=${var.bucket_name}" >> .env
+            echo "AWS_DEFAULT_REGION=${var.aws_region}" >> .env
+            echo "Environment variables set"
+            nohup python3 app.py > app.log 2>&1 &
+            echo "Application started"
+            echo "User data script execution completed"
+            EOF
 
   tags = {
     Name = "demo-instance"

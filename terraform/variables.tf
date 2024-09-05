@@ -12,6 +12,3 @@ variable "ami_id" {
   default     = "ami-0c55b159cbfafe1f0"  # Ubuntu 20.04 LTS in us-west-2
 }
 
-variable "key_name" {
-  description = "ec2-KP"
-}
