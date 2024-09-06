@@ -64,7 +64,7 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 resource "aws_instance" "demo_instance" {
   ami           = var.ami_id
   instance_type = "t2.micro"
-  key_name = aws_key_pair.demo_key_pair.key_name
+  key_name      = aws_key_pair.demo_key_pair.key_name
 
   vpc_security_group_ids = [aws_security_group.demo_sg.id]
 
@@ -76,20 +76,37 @@ resource "aws_instance" "demo_instance" {
               echo 'debconf debconf/frontend select Noninteractive' | sudo debconf-set-selections
 
               sudo apt-get update -y 
-              
-              sudo apt-get install -y python3-pip
+              sudo apt-get install -y python3-pip nginx
 
               git clone https://github.com/Rashesh4/s3-bucket-listing.git 
-
               cd s3-bucket-listing/app
-              
               pip3 install -r requirements.txt
-              
               echo "S3_BUCKET_NAME=${var.bucket_name}" >> .env
               echo "AWS_DEFAULT_REGION=${var.aws_region}" >> .env
 
               nohup python3 app.py > app.log 2>&1 &
-              
+
+              sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout /etc/ssl/private/nginx-selfsigned.key -out /etc/ssl/certs/nginx-selfsigned.crt -subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"
+
+              cat <<EOT > /etc/nginx/sites-available/default
+              server {
+                  listen 443 ssl;
+                  server_name localhost;
+
+                  ssl_certificate /etc/ssl/certs/nginx-selfsigned.crt;
+                  ssl_certificate_key /etc/ssl/private/nginx-selfsigned.key;
+
+                  location / {
+                      proxy_pass http://localhost:5000;
+                      proxy_set_header Host \$host;
+                      proxy_set_header X-Real-IP \$remote_addr;
+                  }
+              }
+              EOT
+
+              # Restart NGINX
+              sudo systemctl restart nginx
+
               echo "User data script execution completed"
               EOF
 
@@ -112,8 +129,8 @@ resource "aws_security_group" "demo_sg" {
   }
 
   ingress {
-    from_port   = 5000
-    to_port     = 5000
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
