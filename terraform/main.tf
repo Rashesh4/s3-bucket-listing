@@ -37,6 +37,30 @@ resource "aws_key_pair" "demo_key_pair" {
   public_key = file("C:/Users/rashe/.ssh/id_rsa.pub")
 }
 
+resource "aws_iam_role" "ec2_s3_access_role" {
+  name = "ec2_s3_access_role"
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action = "sts:AssumeRole"
+      Effect = "Allow"
+      Principal = {
+        Service = "ec2.amazonaws.com"
+      }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "s3_access_policy" {
+  role       = aws_iam_role.ec2_s3_access_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
+}
+
+resource "aws_iam_instance_profile" "ec2_profile" {
+  name = "ec2_profile"
+  role = aws_iam_role.ec2_s3_access_role.name
+}
+
 resource "aws_instance" "demo_instance" {
   ami           = var.ami_id
   instance_type = "t2.micro"
@@ -45,25 +69,31 @@ resource "aws_instance" "demo_instance" {
   vpc_security_group_ids = [aws_security_group.demo_sg.id]
 
   user_data = <<-EOF
-            #!/bin/bash
-            exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
-            echo "Starting user data script execution"
-            sudo apt-get update -y
-            echo "apt-get update completed"
-            sudo apt-get install -y python3-pip
-            echo "python3-pip installed"
-            git clone https://github.com/Rashesh4/s3-bucket-listing.git
-            echo "Repository cloned"
-            cd s3-bucket-listing/app
-            pip3 install -r requirements.txt
-            echo "Dependencies installed"
-            echo "S3_BUCKET_NAME=${var.bucket_name}" >> .env
-            echo "AWS_DEFAULT_REGION=${var.aws_region}" >> .env
-            echo "Environment variables set"
-            nohup python3 app.py > app.log 2>&1 &
-            echo "Application started"
-            echo "User data script execution completed"
-            EOF
+              #!/bin/bash
+              exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+              set -e  # Exit immediately if a command exits with a non-zero status
+
+              echo 'debconf debconf/frontend select Noninteractive' | sudo debconf-set-selections
+
+              sudo apt-get update -y 
+              
+              sudo apt-get install -y python3-pip
+
+              git clone https://github.com/Rashesh4/s3-bucket-listing.git 
+
+              cd s3-bucket-listing/app
+              
+              pip3 install -r requirements.txt
+              
+              echo "S3_BUCKET_NAME=${var.bucket_name}" >> .env
+              echo "AWS_DEFAULT_REGION=${var.aws_region}" >> .env
+
+              nohup python3 app.py > app.log 2>&1 &
+              
+              echo "User data script execution completed"
+              EOF
+
+  iam_instance_profile = aws_iam_instance_profile.ec2_profile.name
 
   tags = {
     Name = "demo-instance"
